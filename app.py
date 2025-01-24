@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QGridLayout, 
     QGroupBox, QHBoxLayout, QStackedLayout, QTableWidget, QTableWidgetItem, QPushButton, QDateEdit, QSpinBox, QListWidget
 )
-from PyQt5.QtCore import QDate
+from PyQt5.QtCore import Qt, QEvent, QDate
 from database import Database
 import sys
 from scheduler_logic import generate_schedule
@@ -31,6 +31,7 @@ class EmployeeDialog(QDialog):
         # Availability time slots
         time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12pm", "9pm-3am"]
         self.availability_checkboxes = {}
+        self.preferred_shifts = {}
 
         for day in availability.keys():
             group_box = QGroupBox(day)
@@ -43,6 +44,9 @@ class EmployeeDialog(QDialog):
                 checkbox.setChecked(slot in availability[day])
                 self.availability_checkboxes[day][slot] = checkbox
                 group_layout.addWidget(checkbox, row, col)
+
+                checkbox.mouseDoubleClickEvent = self.make_preferred_shift(checkbox, day, slot)
+
                 col += 1
                 if col > 3:  # 4 columns per row
                     col = 0
@@ -80,6 +84,27 @@ class EmployeeDialog(QDialog):
             "max_shifts": self.max_shifts_input.value(),
             "min_shifts": self.min_shifts_input.value(),
         }
+    
+    def make_preferred_shift(self, checkbox, day, slot):
+        """Mark the shift as preferred on double-click."""
+        def on_double_click(event):
+            # Toggle the preferred status when the checkbox is double-clicked
+            if event.type() == QEvent.MouseButtonDblClick:
+                # Mark as preferred by changing the background color or some other indicator
+                if checkbox.isChecked():
+                    # If checked, mark it as preferred (e.g., background color change)
+                    checkbox.setStyleSheet("background-color: lightgreen;")
+                    if day not in self.preferred_shifts:
+                        self.preferred_shifts[day] = []
+                    if slot not in self.preferred_shifts[day]:
+                        self.preferred_shifts[day].append(slot)
+                else:
+                    # Reset if unchecked
+                    checkbox.setStyleSheet("")
+                    if day in self.preferred_shifts and slot in self.preferred_shifts[day]:
+                        self.preferred_shifts[day].remove(slot)
+
+        return on_double_click
 
 class EmployeeWindow(QMainWindow):
     def __init__(self):
