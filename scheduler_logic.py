@@ -4,7 +4,6 @@ from datetime import datetime
 def generate_schedule(start_date, database, num_schedules=100):
     """
     Generate multiple random schedules and rank them based on fairness criteria.
-
     :param start_date: A string in the format "yyyy-MM-dd" representing the start date of the schedule.
     :param database: A Database object to retrieve employee data.
     :param num_schedules: Number of random schedules to generate.
@@ -46,6 +45,10 @@ def generate_schedule(start_date, database, num_schedules=100):
                     shift_counts[employee] += 1
                     daily_shifts[employee][day] += 1
 
+                    # Add extra points for preferred shifts
+                    if f"{slot} *" in employee_preference[employee][day]:
+                        points += 5  # Award 5 points for a preferred shift
+
                     # Deduct points if an employee works more than once per day
                     if daily_shifts[employee][day] > 1:
                         points -= 5
@@ -67,6 +70,19 @@ def generate_schedule(start_date, database, num_schedules=100):
                 points -= (assigned_shifts - max_shifts) * 2
 
         return points
+
+    # Build a dictionary of employee preferences based on shifts with "*"
+    employee_preference = {
+        employee["name"]: {
+            day: [
+                slot
+                for slot in employee["availability"].get(day, [])
+                if f"{slot} *" in employee["availability"].get(day, [])
+            ]
+            for day in days_of_week
+        }
+        for employee in employees
+    }
 
     # Generate multiple random schedules
     schedules = []

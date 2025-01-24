@@ -12,8 +12,7 @@ class EmployeeDialog(QDialog):
         super().__init__()
         self.setWindowTitle(title)
 
-        # Default availability i
-        # if none provided
+        # Default availability if none provided
         if availability is None:
             availability = {day: [] for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]}
 
@@ -33,18 +32,29 @@ class EmployeeDialog(QDialog):
         self.availability_checkboxes = {}
         self.preferred_shifts = {}
 
-        for day in availability.keys():
+        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
             group_box = QGroupBox(day)
             group_layout = QGridLayout()
             self.availability_checkboxes[day] = {}
 
+            # Get the availability for the day, or empty list if no availability
+            day_availability = availability.get(day, [])
+
             row, col = 0, 0
             for slot in time_slots:
                 checkbox = QCheckBox(slot)
-                checkbox.setChecked(slot in availability[day])
+                # Check if the slot is part of the day's availability, including preferred shifts (indicated by *)
+                if f"{slot} *" in day_availability:
+                    checkbox.setChecked(True)
+                    checkbox.setText(f"{slot} *")  # Mark as preferred shift
+                elif slot in day_availability:
+                    checkbox.setChecked(True)
+                    checkbox.setText(slot)  # Regular shift
+                
                 self.availability_checkboxes[day][slot] = checkbox
                 group_layout.addWidget(checkbox, row, col)
 
+                # Attach double-click event to toggle preferred shift (add/remove *)
                 checkbox.mouseDoubleClickEvent = self.make_preferred_shift(checkbox, day, slot)
 
                 col += 1
@@ -74,37 +84,60 @@ class EmployeeDialog(QDialog):
 
     def get_employee_data(self):
         """Return the entered employee data as a dictionary."""
+        
+        # Create a dictionary for the availability, including preferred shifts
+        availability = {
+            day: [
+                f"{slot} *" if f"{slot} *" in self.availability_checkboxes[day][slot].text() else slot
+                for slot, checkbox in self.availability_checkboxes[day].items()
+                if checkbox.isChecked()
+            ]
+            for day in self.availability_checkboxes
+        }
+        
+        # Debug print to verify the data
+        print(availability)
+        
         return {
             "name": self.name_input.text(),
             "phone": self.phone_input.text(),
-            "availability": {
-                day: [slot for slot, checkbox in self.availability_checkboxes[day].items() if checkbox.isChecked()]
-                for day in self.availability_checkboxes
-            },
+            "availability": availability,
             "max_shifts": self.max_shifts_input.value(),
             "min_shifts": self.min_shifts_input.value(),
         }
+
     
     def make_preferred_shift(self, checkbox, day, slot):
-        """Mark the shift as preferred on double-click."""
+        """Toggle preferred shift (add/remove '*') on double-click."""
         def on_double_click(event):
-            # Toggle the preferred status when the checkbox is double-clicked
             if event.type() == QEvent.MouseButtonDblClick:
-                # Mark as preferred by changing the background color or some other indicator
-                if checkbox.isChecked():
-                    # If checked, mark it as preferred (e.g., background color change)
-                    checkbox.setStyleSheet("background-color: lightgreen;")
+                # Check the current label of the checkbox
+                current_text = checkbox.text()
+
+                if "*" in current_text:
+                    # Remove '*' if already present (un-preference)
+                    checkbox.setText(slot)
+                else:
+                    # Add '*' to indicate preferred shift
+                    checkbox.setText(f"{slot} *")
+                    
+                # Optionally, update the dictionary with preferred shifts
+                if f"{slot} *" in checkbox.text():
+                    # Add the preferred shift to the dictionary if it's marked with '*'
                     if day not in self.preferred_shifts:
                         self.preferred_shifts[day] = []
                     if slot not in self.preferred_shifts[day]:
-                        self.preferred_shifts[day].append(slot)
+                        self.preferred_shifts[day].append(f"{slot} *")
                 else:
-                    # Reset if unchecked
-                    checkbox.setStyleSheet("")
-                    if day in self.preferred_shifts and slot in self.preferred_shifts[day]:
-                        self.preferred_shifts[day].remove(slot)
+                    # Remove it from the dictionary if it's unmarked
+                    if day in self.preferred_shifts and f"{slot} *" in self.preferred_shifts[day]:
+                        self.preferred_shifts[day].remove(f"{slot} *")
 
         return on_double_click
+
+
+
+
 
 class EmployeeWindow(QMainWindow):
     def __init__(self):
