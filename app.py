@@ -95,9 +95,6 @@ class EmployeeDialog(QDialog):
             for day in self.availability_checkboxes
         }
         
-        # Debug print to verify the data
-        print(availability)
-        
         return {
             "name": self.name_input.text(),
             "phone": self.phone_input.text(),
@@ -286,7 +283,7 @@ class SchedulerWindow(QWidget):
 
         # Define days of the week and time slots
         days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12pm", "9pm-3am"]
+        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
 
         # Ensure the table has the correct dimensions
         self.schedule_table.setRowCount(len(time_slots))
@@ -298,16 +295,15 @@ class SchedulerWindow(QWidget):
         for row, slot in enumerate(time_slots):
             for col, day in enumerate(days_of_week):
                 # Get the list of employees assigned to this day and time slot
-                employees = schedule[day][slot]
-                # Format the employees' names into a string
-                cell_text = ", ".join(employees) if employees else "No Employees"
+                employees = schedule[day][slot] # Format the employees' names into a string
+                #cell_text = ", ".join(employees) if employees else "No Employees"
                 # Populate the table cell
                 item = self.schedule_table.item(row, col)
                 if not item:
                     # If no QTableWidgetItem exists, create one
                     item = QTableWidgetItem()
                     self.schedule_table.setItem(row, col, item)
-                item.setText(cell_text)
+                item.setText(employees)
 
 class MainWindow(QMainWindow):
     def __init__(self):

@@ -1,115 +1,147 @@
-import random
+from ortools.sat.python import cp_model
 from datetime import datetime
 
-def generate_schedule(start_date, database, num_schedules=100):
-    """
-    Generate multiple random schedules and rank them based on fairness criteria.
-    :param start_date: A string in the format "yyyy-MM-dd" representing the start date of the schedule.
-    :param database: A Database object to retrieve employee data.
-    :param num_schedules: Number of random schedules to generate.
-    :return: The best schedule based on points-based ranking.
-    """
-    # Parse the start date
+
+def generate_schedule(start_date, database):
+    # Parse the start date from the input string into a datetime object
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
+
+    # Define the days of the week and time slots for shifts
     days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12pm", "9pm-3am"]
+    time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
 
     # Fetch all employees from the database
     employees = database.get_all_employees()
 
-    # Build a shift availability pool
-    availability_pool = {
-        (day, slot): [
-            employee["name"]
-            for employee in employees
-            if slot in employee["availability"].get(day, [])
-        ]
-        for day in days_of_week
-        for slot in time_slots
+    # Add a placeholder for "No Employee" to handle empty shifts
+    no_employee = {
+        "name": "No Employee",
+        "availability": {day: time_slots for day in days_of_week},
+        "min_shifts": 0,
+        "max_shifts": len(time_slots) * len(days_of_week),  # Can fill all shifts if needed
     }
+    employees.append(no_employee)
 
-    # Helper function to evaluate a schedule's points
-    def evaluate_schedule(schedule):
-        points = 0
+    # Create the CP-SAT model
+    model = cp_model.CpModel()
 
-        # Count shifts assigned to each employee
-        shift_counts = {employee["name"]: 0 for employee in employees}
-        daily_shifts = {employee["name"]: {day: 0 for day in days_of_week} for employee in employees}
+    # Define variables for the number of employees, shifts, and days
+    num_employees = len(employees)
+    num_shifts = len(time_slots)
+    num_days = len(days_of_week)
+    
+    # Create ranges for all employees, shifts, and days
+    all_employees = range(num_employees)
+    all_shifts = range(num_shifts)
+    all_days = range(num_days)
 
-        # Iterate through the schedule
-        for day, slots in schedule.items():
-            for slot, assigned in slots.items():
-                if not assigned:  # Deduct points for empty time slots
-                    points -= 1
-                for employee in assigned:
-                    shift_counts[employee] += 1
-                    daily_shifts[employee][day] += 1
+    # Step 1: Create boolean variables for each employee-day-shift combination
+    shifts = {}
+    for e in all_employees:
+        for d in all_days:
+            for s in all_shifts:
+                shifts[(e, d, s)] = model.NewBoolVar(f"shift_e{e}_d{d}_s{s}")
 
-                    # Add extra points for preferred shifts
-                    if f"{slot} *" in employee_preference[employee][day]:
-                        points += 5  # Award 5 points for a preferred shift
+    # Step 2: Ensure exactly one employee is assigned to each shift per day
+    for d in all_days:
+        for s in all_shifts:
+            model.AddExactlyOne(shifts[(e, d, s)] for e in all_employees)
 
-                    # Deduct points if an employee works more than once per day
-                    if daily_shifts[employee][day] > 1:
-                        points -= 5
+    # Step 3: Ensure each employee is assigned at most one shift per day
+    for e in range(num_employees - 1):  # Exclude "No Employee"
+        for d in all_days:
+            model.AddAtMostOne(shifts[(e, d, s)] for s in all_shifts)
 
-        # Evaluate shifts per employee
-        for employee in employees:
-            name = employee["name"]
-            min_shifts = employee["min_shifts"]
-            max_shifts = employee["max_shifts"]
-            assigned_shifts = shift_counts[name]
+    # Step 4: Define weight constants for the optimization objective
+    preferred_shift_weight = 5  # Weight for preferred shifts
+    not_available = -50        # Penalty for assigning unavailable shifts
+    no_employee_penalty = -60   # Large negative penalty for using "No Employee"
 
-            # Add points if within min/max shifts
-            if min_shifts <= assigned_shifts <= max_shifts:
-                points += 10
-            # Deduct points if below min or above max shifts
-            if assigned_shifts < min_shifts:
-                points -= (min_shifts - assigned_shifts) * 2
-            if assigned_shifts > max_shifts:
-                points -= (assigned_shifts - max_shifts) * 2
+    # Step 5: Define the penalties for unavailable and preferred shifts
+    available_shifts = sum(
+        not_available * shifts[(e, d, s)]
+        for e in range(num_employees - 1)  # Exclude "No Employee"
+        for d in all_days
+        for s in all_shifts
+        if (time_slots[s] not in employees[e]['availability'].get(days_of_week[d], []) 
+            and f"{time_slots[s]} *" not in employees[e]['availability'].get(days_of_week[d], []))
+    )
 
-        return points
+    preferred_shifts = sum(
+        preferred_shift_weight * shifts[(e, d, s)]
+        for e in range(num_employees - 1)  # Exclude "No Employee"
+        for d in all_days
+        for s in all_shifts
+        if (f"{time_slots[s]} *" in employees[e]['availability'].get(days_of_week[d], []))
+    )
 
-    # Build a dictionary of employee preferences based on shifts with "*"
-    employee_preference = {
-        employee["name"]: {
-            day: [
-                slot
-                for slot in employee["availability"].get(day, [])
-                if f"{slot} *" in employee["availability"].get(day, [])
-            ]
-            for day in days_of_week
-        }
-        for employee in employees
-    }
+    # Step 6: Define a penalty to minimize the use of "No Employee" placeholder
+    no_employee_score = sum(
+        no_employee_penalty * shifts[(num_employees - 1, d, s)]  # Index of "No Employee"
+        for d in all_days
+        for s in all_shifts
+    )
 
-    # Generate multiple random schedules
-    schedules = []
-    for _ in range(num_schedules):
-        # Initialize a new schedule
-        schedule = {day: {slot: [] for slot in time_slots} for day in days_of_week}
+    # Step 7: Add employee shift penalties to the objective
+    for e in range(num_employees - 1):  # Exclude "No Employee"
+        total_shifts_worked = sum(shifts[(e, d, s)] for d in all_days for s in all_shifts)
+        
+        # Compute how far the total shifts are from the minimum
+        shift_diff = total_shifts_worked - employees[e]["min_shifts"]
+        min_shifts = employees[e]["min_shifts"]
+        
+        # Apply a penalty based on how far shifts deviate from the minimum
+        if min_shifts > 0:
+            shift_penalty = shift_diff * (10 / min_shifts)  # Scaling factor can be adjusted
+        else:
+            shift_penalty = 0
 
-        # Assign shifts randomly
-        shift_counts = {employee["name"]: 0 for employee in employees}  # Track assigned shifts
-        for (day, slot), available_employees in availability_pool.items():
-            # Add a "No Employee" option if no one is available or employees exceed max shifts
-            valid_employees = [
-                emp
-                for emp in available_employees
-                if shift_counts[emp] < next(
-                    e["max_shifts"] for e in employees if e["name"] == emp
-                )
-            ]
-            options = valid_employees + ["No Employee"]  # Allow leaving the shift unfilled
-            selected_employee = random.choice(options)
+        # Add the penalty to the objective function
+        model.Maximize(
+            no_employee_score + preferred_shifts + available_shifts + shift_penalty
+        )
+        
+        # Ensure that the employee works within their min and max shifts
+        model.Add(total_shifts_worked >= min(employees[e]["min_shifts"], 2))  # Example of a min shift
+        model.Add(total_shifts_worked <= employees[e]["max_shifts"])
 
-            if selected_employee != "No Employee":
-                schedule[day][slot].append(selected_employee)
-                shift_counts[selected_employee] += 1
+    # Step 8: Solve the model
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
 
-        schedules.append(schedule)
+    # Step 9: Calculate and print the shift difference for each employee
+    for e in range(num_employees - 1):  # Exclude "No Employee"
+        total_shifts_worked = sum(solver.Value(shifts[(e, d, s)]) for d in all_days for s in all_shifts)
+        min_shifts = employees[e]["min_shifts"]
+        shift_diff = total_shifts_worked - min_shifts
+        print(f"Employee: {employees[e]['name']}, Minimum Shifts: {min_shifts}, "
+              f"Shifts Worked: {total_shifts_worked}, Difference: {shift_diff}")
 
-    # Rank schedules by points
-    best_schedule = max(schedules, key=evaluate_schedule)
-    return best_schedule
+    # Step 10: Generate the final schedule in the desired format
+    schedule = {day: {slot: "No Employees" for slot in time_slots} for day in days_of_week}
+
+    # If a feasible or optimal solution is found, assign employees to shifts
+    if status in {cp_model.OPTIMAL, cp_model.FEASIBLE}:
+        for d in all_days:
+            for s in all_shifts:
+                for e in all_employees:
+                    if solver.Value(shifts[(e, d, s)]) == 1:
+                        day = days_of_week[d]
+                        slot = time_slots[s]
+                        # Assign employee to the time slot, appending if necessary
+                        if schedule[day][slot] == "No Employees":
+                            schedule[day][slot] = employees[e]['name']
+                        else:
+                            schedule[day][slot] += f", {employees[e]['name']}"
+
+        print("Solution found!")
+        # Print solver statistics
+        print("\nStatistics")
+        print(f"  - conflicts: {solver.NumConflicts()}")
+        print(f"  - branches : {solver.NumBranches()}")
+        print(f"  - wall time: {solver.WallTime()} s")
+        print(f"Number of shift requests met = {solver.objective_value}")
+        return schedule
+    else:
+        print("No feasible solution found!")
+        return schedule
