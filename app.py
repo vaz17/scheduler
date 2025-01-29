@@ -28,7 +28,7 @@ class EmployeeDialog(QDialog):
         layout.addRow('Phone Number:', self.phone_input)
 
         # Availability time slots
-        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12pm", "9pm-3am"]
+        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
         self.availability_checkboxes = {}
         self.preferred_shifts = {}
 
@@ -254,7 +254,7 @@ class SchedulerWindow(QWidget):
         )
 
         # Set row headers (time slots)
-        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12pm", "9pm-3am"]
+        time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
         for row, slot in enumerate(time_slots):
             item = QTableWidgetItem(slot)
             self.schedule_table.setVerticalHeaderItem(row, item)

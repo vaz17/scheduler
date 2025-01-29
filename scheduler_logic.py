@@ -54,8 +54,8 @@ def generate_schedule(start_date, database):
 
     # Step 4: Define weight constants for the optimization objective
     preferred_shift_weight = 5  # Weight for preferred shifts
-    not_available = -50        # Penalty for assigning unavailable shifts
-    no_employee_penalty = -60   # Large negative penalty for using "No Employee"
+    not_available = -60        # Penalty for assigning unavailable shifts
+    no_employee_penalty = -62   # Large negative penalty for using "No Employee"
 
     # Step 5: Define the penalties for unavailable and preferred shifts
     available_shifts = sum(
@@ -92,7 +92,7 @@ def generate_schedule(start_date, database):
         
         # Apply a penalty based on how far shifts deviate from the minimum
         if min_shifts > 0:
-            shift_penalty = shift_diff * (10 / min_shifts)  # Scaling factor can be adjusted
+            shift_penalty = shift_diff * (15 / min_shifts)  # Scaling factor can be adjusted
         else:
             shift_penalty = 0
 
@@ -140,7 +140,7 @@ def generate_schedule(start_date, database):
         print(f"  - conflicts: {solver.NumConflicts()}")
         print(f"  - branches : {solver.NumBranches()}")
         print(f"  - wall time: {solver.WallTime()} s")
-        print(f"Number of shift requests met = {solver.objective_value}")
+        print(f"Schedule Score = {solver.objective_value}")
         return schedule
     else:
         print("No feasible solution found!")
