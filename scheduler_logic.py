@@ -53,13 +53,13 @@ def generate_schedule(start_date, database):
             model.AddAtMostOne(shifts[(e, d, s)] for s in all_shifts)
 
     # Step 4: Define weight constants for the optimization objective
-    preferred_shift_weight = 5  # Weight for preferred shifts
-    not_available = -60        # Penalty for assigning unavailable shifts
-    no_employee_penalty = -62   # Large negative penalty for using "No Employee"
+    preferred_shift_weight = 1  # Weight for preferred shifts
+    not_available_penalty = -50  # Penalty for assigning unavailable shifts
+    no_employee_penalty = -40    # Large negative penalty for using "No Employee"
 
     # Step 5: Define the penalties for unavailable and preferred shifts
     available_shifts = sum(
-        not_available * shifts[(e, d, s)]
+        not_available_penalty * shifts[(e, d, s)]
         for e in range(num_employees - 1)  # Exclude "No Employee"
         for d in all_days
         for s in all_shifts
@@ -82,34 +82,31 @@ def generate_schedule(start_date, database):
         for s in all_shifts
     )
 
-    # Step 7: Add employee shift penalties to the objective
+    # Step 7: Ensure that employees work within their min and max shifts
+    total_shift_penalty = 0
     for e in range(num_employees - 1):  # Exclude "No Employee"
         total_shifts_worked = sum(shifts[(e, d, s)] for d in all_days for s in all_shifts)
-        
-        # Compute how far the total shifts are from the minimum
-        shift_diff = total_shifts_worked - employees[e]["min_shifts"]
+
+        # Apply penalty for deviation from min shifts
         min_shifts = employees[e]["min_shifts"]
-        
-        # Apply a penalty based on how far shifts deviate from the minimum
         if min_shifts > 0:
-            shift_penalty = shift_diff * (15 / min_shifts)  # Scaling factor can be adjusted
-        else:
-            shift_penalty = 0
+            shift_penalty = (total_shifts_worked - min_shifts) * (10 / min_shifts)  # Scaling factor
+            total_shift_penalty += shift_penalty
 
-        # Add the penalty to the objective function
-        model.Maximize(
-            no_employee_score + preferred_shifts + available_shifts + shift_penalty
-        )
-        
-        # Ensure that the employee works within their min and max shifts
-        model.Add(total_shifts_worked >= min(employees[e]["min_shifts"], 2))  # Example of a min shift
-        model.Add(total_shifts_worked <= employees[e]["max_shifts"])
+        # Ensure min and max shift constraints
+        model.Add(total_shifts_worked >= min(employees[e]["min_shifts"], 2))  # Minimum shifts constraint
+        model.Add(total_shifts_worked <= employees[e]["max_shifts"])  # Maximum shifts constraint
 
-    # Step 8: Solve the model
+    # Step 8: Maximize the objective function
+    model.Maximize(
+        no_employee_score + preferred_shifts + available_shifts - total_shift_penalty
+    )
+
+    # Step 9: Solve the model
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
-    # Step 9: Calculate and print the shift difference for each employee
+    # Step 10: Calculate and print the shift difference for each employee
     for e in range(num_employees - 1):  # Exclude "No Employee"
         total_shifts_worked = sum(solver.Value(shifts[(e, d, s)]) for d in all_days for s in all_shifts)
         min_shifts = employees[e]["min_shifts"]
@@ -117,7 +114,7 @@ def generate_schedule(start_date, database):
         print(f"Employee: {employees[e]['name']}, Minimum Shifts: {min_shifts}, "
               f"Shifts Worked: {total_shifts_worked}, Difference: {shift_diff}")
 
-    # Step 10: Generate the final schedule in the desired format
+    # Step 11: Generate the final schedule in the desired format
     schedule = {day: {slot: "No Employees" for slot in time_slots} for day in days_of_week}
 
     # If a feasible or optimal solution is found, assign employees to shifts
@@ -140,7 +137,7 @@ def generate_schedule(start_date, database):
         print(f"  - conflicts: {solver.NumConflicts()}")
         print(f"  - branches : {solver.NumBranches()}")
         print(f"  - wall time: {solver.WallTime()} s")
-        print(f"Schedule Score = {solver.objective_value}")
+        print(f"Schedule Score = {solver.ObjectiveValue()}")
         return schedule
     else:
         print("No feasible solution found!")
