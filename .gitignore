@@ -16,3 +16,12 @@ venv/
 Thumbs.db  # Windows
 
 myenv/
+
+# .gitignore
+*.db
+*.pyc
+__pycache__/
+dist/
+build/
+*.spec
+
