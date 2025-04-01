@@ -24,6 +24,17 @@ class Database:
             time_slot TEXT,
             FOREIGN KEY(employee_id) REFERENCES employees(id)
         )""")
+
+        # Add a new table for time-off requests
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS time_off_requests (
+            id INTEGER PRIMARY KEY,
+            employee_name TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            reason TEXT
+        )""")
+        
         self.conn.commit()
 
     def add_employee(self, name, phone, availability, max_shifts, min_shifts):
@@ -117,4 +128,32 @@ class Database:
         DELETE FROM availability WHERE employee_id IN (SELECT id FROM employees WHERE name = ?)""", (name,))
         self.cursor.execute("""
         DELETE FROM employees WHERE name = ?""", (name,))
+        self.conn.commit()
+
+    def add_time_off_request(self, employee_name, start_date, end_date, reason):
+        """Add a new time-off request to the database."""
+        self.cursor.execute("""
+        INSERT INTO time_off_requests (employee_name, start_date, end_date, reason)
+        VALUES (?, ?, ?, ?)""", (employee_name, start_date, end_date, reason))
+        self.conn.commit()
+
+    def get_all_time_off_requests(self):
+        """Retrieve all time-off requests from the database."""
+        self.cursor.execute("""
+        SELECT employee_name, start_date, end_date, reason FROM time_off_requests""")
+        requests = []
+        for row in self.cursor.fetchall():
+            employee_name, start_date, end_date, reason = row
+            requests.append({
+                "employee_name": employee_name,
+                "start_date": start_date,
+                "end_date": end_date,
+                "reason": reason
+            })
+        return requests
+    
+    def delete_time_off_request(self, employee_name, start_date):
+        """Delete a time-off request by employee name and start date."""
+        self.cursor.execute("""
+        DELETE FROM time_off_requests WHERE employee_name = ? AND start_date = ?""", (employee_name, start_date))
         self.conn.commit()

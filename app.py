@@ -335,7 +335,7 @@ class MainWindow(QMainWindow):
         # Add the pages (widgets) to the stacked layout
         self.scheduler_page = SchedulerWindow(self.database)  # Scheduler page (to be filled later)
         self.employee_page = EmployeeWindow()  # Employee window
-        self.time_off_page = QWidget()  # Time off page placeholder
+        self.time_off_page = TimeOffPage(self.database)  # Time off page placeholder
 
         self.stacklayout.addWidget(self.scheduler_page)
         self.stacklayout.addWidget(self.employee_page)
@@ -361,6 +361,92 @@ class MainWindow(QMainWindow):
     def activate_tab_3(self):
         """Switch to the time off page"""
         self.stacklayout.setCurrentIndex(2)
+
+class TimeOffPage(QWidget):
+    def __init__(self, database):
+        super().__init__()
+        self.database = database
+        layout = QVBoxLayout(self)
+
+        self.request_button = QPushButton("Add Time Off Request")
+        self.request_button.clicked.connect(self.show_time_off_dialog)
+        layout.addWidget(self.request_button)
+
+        self.delete_button = QPushButton("Delete Selected Request")
+        self.delete_button.clicked.connect(self.delete_selected_request)
+        layout.addWidget(self.delete_button)
+
+        self.timeoff_list = QListWidget()
+        layout.addWidget(self.timeoff_list)
+
+        self.load_time_off_requests()
+
+    def show_time_off_dialog(self):
+        dialog = TimeOffDialog(self)
+        if dialog.exec_():
+            data = dialog.get_data()
+            self.database.add_time_off_request(
+                data["employee_name"],
+                data["start_date"],
+                data["end_date"],
+                data["reason"]
+            )
+            self.load_time_off_requests()
+
+    def load_time_off_requests(self):
+        self.timeoff_list.clear()
+        self.time_off_data = self.database.get_all_time_off_requests()
+        for r in self.time_off_data:
+            self.timeoff_list.addItem(
+                f"{r['employee_name']} | {r['start_date']} to {r['end_date']} | {r['reason']}"
+            )
+
+    def delete_selected_request(self):
+        selected_item = self.timeoff_list.currentRow()
+        if selected_item >= 0:
+            request = self.time_off_data[selected_item]
+            self.database.delete_time_off_request(
+                request["employee_name"],
+                request["start_date"]
+            )
+            self.load_time_off_requests()
+
+class TimeOffDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Request Time Off")
+
+        layout = QFormLayout(self)
+
+        self.name_input = QLineEdit()
+        layout.addRow("Employee Name:", self.name_input)
+
+        self.start_date_input = QDateEdit()
+        self.start_date_input.setCalendarPopup(True)
+        self.start_date_input.setDate(QDate.currentDate())
+        layout.addRow("Start Date:", self.start_date_input)
+
+        self.end_date_input = QDateEdit()
+        self.end_date_input.setCalendarPopup(True)
+        self.end_date_input.setDate(QDate.currentDate())
+        layout.addRow("End Date:", self.end_date_input)
+
+        self.reason_input = QLineEdit()
+        layout.addRow("Reason:", self.reason_input)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addWidget(button_box)
+
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+    def get_data(self):
+        return {
+            "employee_name": self.name_input.text(),
+            "start_date": self.start_date_input.date().toString("yyyy-MM-dd"),
+            "end_date": self.end_date_input.date().toString("yyyy-MM-dd"),
+            "reason": self.reason_input.text()
+        }
 
 
 
