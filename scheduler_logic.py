@@ -180,3 +180,4 @@ def generate_schedule(start_date, database):
     else:
         print("No feasible solution found!")
         return schedule
+    
