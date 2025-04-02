@@ -1,26 +1,29 @@
+# Byte-compiled / cache files
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyc
 
-*.db
-
-venv/
-.env/
-
+# Logs
 *.log
 
+# Databases
+*.db
+
+# Virtual environments
+venv/
+myenv/
+.env/
+
+# Editor/IDE files
 .vscode/
 .idea/
 
-.DS_Store  # macOS
-Thumbs.db  # Windows
+# macOS / Windows system files
+.DS_Store
+Thumbs.db
 
-myenv/
-
-# .gitignore
-*.db
-*.pyc
-__pycache__/
+# PyInstaller build artifacts
 dist/
 build/
 *.spec
