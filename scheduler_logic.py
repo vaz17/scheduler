@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 
 def generate_schedule(start_date, database):
@@ -21,6 +22,24 @@ def generate_schedule(start_date, database):
         "max_shifts": len(time_slots) * len(days_of_week),  # Can fill all shifts if needed
     }
     employees.append(no_employee)
+
+    time_off_requests = database.get_all_time_off_requests()
+    # Track unavailable dates per employee
+    unavailable_dates = defaultdict(set)
+
+    week_start = start_date
+    week_end = week_start + timedelta(days=6)
+
+    for entry in time_off_requests:
+        name = entry["employee_name"]
+        start = datetime.strptime(entry["start_date"], "%Y-%m-%d").date()
+        end = datetime.strptime(entry["end_date"], "%Y-%m-%d").date()
+
+        current = start
+        while current <= end:
+            if week_start.date() <= current <= week_end.date():
+                unavailable_dates[name].add(current)
+            current += timedelta(days=1)
 
     # Create the CP-SAT model
     model = cp_model.CpModel()
@@ -67,6 +86,20 @@ def generate_schedule(start_date, database):
             and f"{time_slots[s]} *" not in employees[e]['availability'].get(days_of_week[d], []))
     )
 
+    # Step 5.5: Prevent assigning employees on their unavailable dates and adjust min/max shifts
+    employee_diff = defaultdict(int)
+
+    for d in all_days:
+        date = week_start + timedelta(days=d)
+        day_name = days_of_week[d]
+        for e in range(num_employees - 1):  # Exclude No Employee
+            name = employees[e]["name"]
+            if date.date() in unavailable_dates[name]:
+                for s in all_shifts:
+                    model.Add(shifts[(e, d, s)] == 0)
+                if employees[e]["availability"].get(day_name):
+                    employee_diff[e] += 1  # Track how many days off this employee has
+
     preferred_shifts = sum(
         preferred_shift_weight * shifts[(e, d, s)]
         for e in range(num_employees - 1)  # Exclude "No Employee"
@@ -84,18 +117,23 @@ def generate_schedule(start_date, database):
 
     # Step 7: Ensure that employees work within their min and max shifts
     total_shift_penalty = 0
-    for e in range(num_employees - 1):  # Exclude "No Employee"
+    for e in range(num_employees - 1):
         total_shifts_worked = sum(shifts[(e, d, s)] for d in all_days for s in all_shifts)
 
-        # Apply penalty for deviation from min shifts
         min_shifts = employees[e]["min_shifts"]
+        max_shifts = employees[e]["max_shifts"]
+
+        adjustment = employee_diff.get(e, 0)
+        max_shifts = max(max_shifts - adjustment, 0)
+        min_shifts = min(min(min_shifts, 2), max_shifts)
+
         if min_shifts > 0:
-            shift_penalty = (total_shifts_worked - min_shifts) * (10 / min_shifts)  # Scaling factor
+            shift_penalty = (total_shifts_worked - min_shifts) * (10 / min_shifts)
             total_shift_penalty += shift_penalty
 
-        # Ensure min and max shift constraints
-        model.Add(total_shifts_worked >= min(employees[e]["min_shifts"], 2))  # Minimum shifts constraint
-        model.Add(total_shifts_worked <= employees[e]["max_shifts"])  # Maximum shifts constraint
+        model.Add(total_shifts_worked >= min_shifts)
+        model.Add(total_shifts_worked <= max_shifts)
+
 
     # Step 8: Maximize the objective function
     model.Maximize(
@@ -109,7 +147,12 @@ def generate_schedule(start_date, database):
     # Step 10: Calculate and print the shift difference for each employee
     for e in range(num_employees - 1):  # Exclude "No Employee"
         total_shifts_worked = sum(solver.Value(shifts[(e, d, s)]) for d in all_days for s in all_shifts)
-        min_shifts = employees[e]["min_shifts"]
+        employee = employees[e]['name']
+        if e not in employee_diff:
+            min_shifts = employees[e]["min_shifts"]
+        else:
+            min_shifts = employees[e]["min_shifts"] - employee_diff[e]
+            print(min_shifts)
         shift_diff = total_shifts_worked - min_shifts
         print(f"Employee: {employees[e]['name']}, Minimum Shifts: {min_shifts}, "
               f"Shifts Worked: {total_shifts_worked}, Difference: {shift_diff}")
