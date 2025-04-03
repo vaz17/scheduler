@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 def generate_schedule(start_date, database):
+    # Only change to enter debug mode
+    debug_mode = False
     # -------------------- Setup --------------------
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
 
@@ -150,8 +152,7 @@ def generate_schedule(start_date, database):
         if e not in employee_diff:
             min_shifts = employees[e]["min_shifts"]
         else:
-            min_shifts = employees[e]["min_shifts"] - employee_diff[e]
-            print(min_shifts)
+            min_shifts = min(0, employees[e]["min_shifts"] - employee_diff[e])
         shift_diff = total_shifts_worked - min_shifts
         print(f"Employee: {employee}, Minimum Shifts: {min_shifts}, Shifts Worked: {total_shifts_worked}, Difference: {shift_diff}")
 
@@ -176,8 +177,42 @@ def generate_schedule(start_date, database):
         print(f"  - branches : {solver.NumBranches()}")
         print(f"  - wall time: {solver.WallTime()} s")
         print(f"Schedule Score = {solver.ObjectiveValue()}")
+
+
+        if debug_mode:
+            while True:
+                print("\n--- DEBUG MODE: Check Availability ---")
+                day_input = input("Enter a day to inspect (e.g., Monday), or 'exit' to quit: ").strip()
+                if day_input.lower() == "exit":
+                    break
+                if day_input not in days_of_week:
+                    print("Invalid day. Try again.")
+                    continue
+
+                print(f"Available time slots: {', '.join(time_slots)}")
+                slot_input = input("Enter a time slot (e.g., 12pm-6pm): ").strip()
+                if slot_input not in time_slots:
+                    print("Invalid time slot. Try again.")
+                    continue
+
+                d = days_of_week.index(day_input)
+                s = time_slots.index(slot_input)
+
+                available = []
+                for e in range(num_employees - 1):  # exclude 'No Employee'
+                    availability = employees[e]['availability'].get(day_input, [])
+                    if time_slots[s] in availability or f"{time_slots[s]} *" in availability:
+                        available.append(employees[e]['name'])
+
+                if available:
+                    print(f"{day_input} - {slot_input}: Available Employees -> {', '.join(available)}")
+                else:
+                    print(f"No one is available for {day_input} - {slot_input}")
+
         return schedule
+
     else:
         print("No feasible solution found!")
         return schedule
     
+
