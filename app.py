@@ -1,11 +1,13 @@
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QGridLayout, 
-    QGroupBox, QHBoxLayout, QStackedLayout, QTableWidget, QTableWidgetItem, QPushButton, QDateEdit, QSpinBox, QListWidget
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox,
+    QGridLayout, QGroupBox, QHBoxLayout, QStackedLayout, QTableWidget, QTableWidgetItem, QPushButton, QDateEdit,
+    QSpinBox, QListWidget
 )
 from PyQt5.QtCore import Qt, QEvent, QDate
+from PyQt5.QtGui import QColor
 from database import Database
-import sys
 from scheduler_logic import generate_schedule
+import sys
 
 class EmployeeDialog(QDialog):
     def __init__(self, title, name="", phone="", availability=None, max_shifts=0, min_shifts=0):
@@ -228,82 +230,78 @@ class SchedulerWindow(QWidget):
         self.setWindowTitle("Schedule Generator")
         self.resize(800, 600)
 
-        # Main layout for the scheduler
+        self.excluded_slots = []  # Store excluded (day, slot) pairs
+
         layout = QVBoxLayout(self)
 
-        # Create a date picker for the start date
         self.start_date_picker = QDateEdit(self)
-        self.start_date_picker.setDate(QDate.currentDate())  # Default to today's date
+        self.start_date_picker.setDate(QDate.currentDate())
         self.start_date_picker.setCalendarPopup(True)
-        self.start_date_picker.setDisplayFormat("yyyy-MM-dd")  # Format for the date (optional)
+        self.start_date_picker.setDisplayFormat("yyyy-MM-dd")
         layout.addWidget(self.start_date_picker)
 
-        # Create a button to generate the schedule
         self.generate_schedule_button = QPushButton("Generate Schedule", self)
         self.generate_schedule_button.clicked.connect(self.generate_schedule)
         layout.addWidget(self.generate_schedule_button)
 
-        # Create a table for the schedule
         self.schedule_table = QTableWidget(self)
-        self.schedule_table.setColumnCount(7)  # 7 days of the week
-        self.schedule_table.setRowCount(7)  # 7 time slots (example)
-
-        # Set column headers (days of the week)
+        self.schedule_table.setColumnCount(7)
+        self.schedule_table.setRowCount(7)
         self.schedule_table.setHorizontalHeaderLabels(
             ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         )
-
-        # Set row headers (time slots)
         time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
         for row, slot in enumerate(time_slots):
             item = QTableWidgetItem(slot)
             self.schedule_table.setVerticalHeaderItem(row, item)
 
-        # Load empty schedule by default
-        self.load_empty_schedule()
+        self.schedule_table.cellDoubleClicked.connect(self.toggle_exclusion)
 
-        # Add the table to the layout
+        self.load_empty_schedule()
         layout.addWidget(self.schedule_table)
 
     def load_empty_schedule(self):
-        """Load an empty schedule with no employee names."""
         for row in range(self.schedule_table.rowCount()):
             for col in range(self.schedule_table.columnCount()):
-                item = QTableWidgetItem("")  # Empty cell by default
+                item = QTableWidgetItem("")
                 self.schedule_table.setItem(row, col, item)
 
+    def toggle_exclusion(self, row, col):
+        day = self.schedule_table.horizontalHeaderItem(col).text()
+        slot = self.schedule_table.verticalHeaderItem(row).text()
+        item = self.schedule_table.item(row, col)
+
+        key = (day, slot)
+
+        if key in self.excluded_slots:
+            self.excluded_slots.remove(key)
+            item.setBackground(QTableWidgetItem().background())
+        else:
+            self.excluded_slots.append(key)
+            item.setBackground(QColor("#fca5a5"))  # light red
+
     def generate_schedule(self):
-        """Generate the schedule based on the selected start date and populate the schedule table."""
-        # Retrieve the selected start date
         start_date = self.start_date_picker.date().toString("yyyy-MM-dd")
-        print(f"Generating schedule starting from: {start_date}")
+        schedule = generate_schedule(start_date, self.database, excluded=self.excluded_slots)
 
-        # Call the scheduling logic to generate the schedule
-        schedule = generate_schedule(start_date, self.database)
-
-        # Define days of the week and time slots
         days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
 
-        # Ensure the table has the correct dimensions
         self.schedule_table.setRowCount(len(time_slots))
         self.schedule_table.setColumnCount(len(days_of_week))
         self.schedule_table.setHorizontalHeaderLabels(days_of_week)
         self.schedule_table.setVerticalHeaderLabels(time_slots)
 
-        # Populate the table with the generated schedule
         for row, slot in enumerate(time_slots):
             for col, day in enumerate(days_of_week):
-                # Get the list of employees assigned to this day and time slot
-                employees = schedule[day][slot] # Format the employees' names into a string
-                #cell_text = ", ".join(employees) if employees else "No Employees"
-                # Populate the table cell
+                employees = schedule[day][slot]
                 item = self.schedule_table.item(row, col)
                 if not item:
-                    # If no QTableWidgetItem exists, create one
                     item = QTableWidgetItem()
                     self.schedule_table.setItem(row, col, item)
                 item.setText(employees)
+                if (day, slot) in self.excluded_slots:
+                    item.setBackground(QColor("#fca5a5"))
 
 class MainWindow(QMainWindow):
     def __init__(self):

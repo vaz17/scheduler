@@ -2,14 +2,24 @@ from ortools.sat.python import cp_model
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-def generate_schedule(start_date, database):
+def generate_schedule(start_date, database, excluded=None):
     # Only change to enter debug mode
     debug_mode = False
+
     # -------------------- Setup --------------------
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
 
     days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     time_slots = ["12am-6am", "6am-12pm", "9am-3pm", "12pm-6pm", "3pm-9pm", "6pm-12am", "9pm-3am"]
+
+    # Convert excluded (day, slot) pairs to index-based (d, s) pairs
+    excluded_set = set()
+    if excluded:
+        for day, slot in excluded:
+            if day in days_of_week and slot in time_slots:
+                d = days_of_week.index(day)
+                s = time_slots.index(slot)
+                excluded_set.add((d, s))
 
     employees = database.get_all_employees()
 
@@ -40,6 +50,7 @@ def generate_schedule(start_date, database):
                 unavailable_dates[name].add(current)
             current += timedelta(days=1)
 
+
     # -------------------- Constraint Model Setup --------------------
     model = cp_model.CpModel()
 
@@ -56,6 +67,8 @@ def generate_schedule(start_date, database):
     for e in all_employees:
         for d in all_days:
             for s in all_shifts:
+                if (d, s) in excluded_set:
+                    continue
                 shifts[(e, d, s)] = model.NewBoolVar(f"shift_e{e}_d{d}_s{s}")
 
     # -------------------- Basic Constraints --------------------
@@ -63,30 +76,39 @@ def generate_schedule(start_date, database):
     # Ensure each shift has exactly one assigned employee
     for d in all_days:
         for s in all_shifts:
+            if (d, s) in excluded_set:
+                continue
             model.AddExactlyOne(shifts[(e, d, s)] for e in all_employees)
+
 
     # Ensure employees have at most one shift per day (excluding 'No Employee')
     for e in range(num_employees - 1):
         for d in all_days:
-            model.AddAtMostOne(shifts[(e, d, s)] for s in all_shifts)
+            model.AddAtMostOne(
+                shifts[(e, d, s)] for s in all_shifts if (d, s) not in excluded_set
+            )
+
 
     # -------------------- Objective Weights --------------------
     preferred_shift_weight = 1
     not_available_penalty = -50
     no_employee_penalty = -40
 
-    # Penalize assigning employees to shifts they're not available for
+    # Penalize assigning employees to shifts they're not available 
     available_shifts = sum(
         not_available_penalty * shifts[(e, d, s)]
         for e in range(num_employees - 1)
         for d in all_days
         for s in all_shifts
-        if (time_slots[s] not in employees[e]['availability'].get(days_of_week[d], [])
-            and f"{time_slots[s]} *" not in employees[e]['availability'].get(days_of_week[d], []))
+        if (d, s) not in excluded_set and
+           (time_slots[s] not in employees[e]['availability'].get(days_of_week[d], []) and
+            f"{time_slots[s]} *" not in employees[e]['availability'].get(days_of_week[d], []))
     )
+
 
     # -------------------- Time-Off Constraint & Shift Adjustment --------------------
     employee_diff = defaultdict(int)
+
 
     # Restricts employee assigning on time off requests
     for d in all_days:
@@ -96,9 +118,10 @@ def generate_schedule(start_date, database):
             name = employees[e]["name"]
             if date.date() in unavailable_dates[name]:
                 for s in all_shifts:
-                    model.Add(shifts[(e, d, s)] == 0)
+                    if (d, s) not in excluded_set:
+                        model.Add(shifts[(e, d, s)] == 0)
                 if employees[e]["availability"].get(day_name):
-                    employee_diff[e] += 1  # Only count if they were otherwise available
+                    employee_diff[e] += 1
 
     # Reward assigning employees to their preferred shifts
     preferred_shifts = sum(
@@ -106,7 +129,8 @@ def generate_schedule(start_date, database):
         for e in range(num_employees - 1)
         for d in all_days
         for s in all_shifts
-        if (f"{time_slots[s]} *" in employees[e]['availability'].get(days_of_week[d], []))
+        if (d, s) not in excluded_set and
+           (f"{time_slots[s]} *" in employees[e]['availability'].get(days_of_week[d], []))
     )
 
     # Penalize using the 'No Employee' placeholder
@@ -114,13 +138,17 @@ def generate_schedule(start_date, database):
         no_employee_penalty * shifts[(num_employees - 1, d, s)]
         for d in all_days
         for s in all_shifts
+        if (d, s) not in excluded_set
     )
 
     # -------------------- Shift Count Constraints --------------------
+
     total_shift_penalty = 0
 
     for e in range(num_employees - 1):
-        total_shifts_worked = sum(shifts[(e, d, s)] for d in all_days for s in all_shifts)
+        total_shifts_worked = sum(
+            shifts[(e, d, s)] for d in all_days for s in all_shifts if (d, s) not in excluded_set
+        )
 
         min_shifts = employees[e]["min_shifts"]
         max_shifts = employees[e]["max_shifts"]
@@ -136,7 +164,6 @@ def generate_schedule(start_date, database):
         model.Add(total_shifts_worked >= min_shifts)
         model.Add(total_shifts_worked <= max_shifts)
 
-    # -------------------- Objective Function --------------------
     model.Maximize(
         no_employee_score + preferred_shifts + available_shifts - total_shift_penalty
     )
@@ -145,15 +172,25 @@ def generate_schedule(start_date, database):
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
+
     # -------------------- Report Results --------------------
     for e in range(num_employees - 1):
-        total_shifts_worked = sum(solver.Value(shifts[(e, d, s)]) for d in all_days for s in all_shifts)
+        total_shifts_worked = sum(
+            solver.Value(shifts[(e, d, s)])
+            for d in all_days
+            for s in all_shifts
+            if (d, s) not in excluded_set
+        )
+
         employee = employees[e]['name']
+
         if e not in employee_diff:
             min_shifts = employees[e]["min_shifts"]
         else:
             min_shifts = min(0, employees[e]["min_shifts"] - employee_diff[e])
+
         shift_diff = total_shifts_worked - min_shifts
+
         print(f"Employee: {employee}, Minimum Shifts: {min_shifts}, Shifts Worked: {total_shifts_worked}, Difference: {shift_diff}")
 
     # -------------------- Generate Final Schedule --------------------
@@ -162,6 +199,8 @@ def generate_schedule(start_date, database):
     if status in {cp_model.OPTIMAL, cp_model.FEASIBLE}:
         for d in all_days:
             for s in all_shifts:
+                if (d, s) in excluded_set:
+                    continue
                 for e in all_employees:
                     if solver.Value(shifts[(e, d, s)]) == 1:
                         day = days_of_week[d]
@@ -171,13 +210,16 @@ def generate_schedule(start_date, database):
                         else:
                             schedule[day][slot] += f", {employees[e]['name']}"
 
+        # Mark explicitly excluded cells
+        for day, slot in excluded:
+            schedule[day][slot] = "Excluded"
+
         print("Solution found!")
         print("\nStatistics")
         print(f"  - conflicts: {solver.NumConflicts()}")
         print(f"  - branches : {solver.NumBranches()}")
         print(f"  - wall time: {solver.WallTime()} s")
         print(f"Schedule Score = {solver.ObjectiveValue()}")
-
 
         if debug_mode:
             while True:
@@ -199,7 +241,7 @@ def generate_schedule(start_date, database):
                 s = time_slots.index(slot_input)
 
                 available = []
-                for e in range(num_employees - 1):  # exclude 'No Employee'
+                for e in range(num_employees - 1):
                     availability = employees[e]['availability'].get(day_input, [])
                     if time_slots[s] in availability or f"{time_slots[s]} *" in availability:
                         available.append(employees[e]['name'])
@@ -213,6 +255,8 @@ def generate_schedule(start_date, database):
 
     else:
         print("No feasible solution found!")
+        # Still mark excluded cells for UI consistency
+        for day, slot in excluded:
+            schedule[day][slot] = "Excluded"
         return schedule
-    
 
