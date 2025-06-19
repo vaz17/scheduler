@@ -1,55 +1,58 @@
 # Employee Scheduler
 
-A Python desktop app for managing weekly employee schedules using a GUI built with PyQt5 and backed by SQLite.
+A desktop app for managing weekly work schedules. This PyQt5-based application allows users to manage employees, track time-off requests, and auto-generate weekly schedules based on constraints and preferences.
 
-## 📋 Features
+## 🧠 Features
 
-- GUI to manage employee records
-- Add/remove/edit employees
-- Assign weekly shifts and prevent conflicts
-- Automatically generate and display a schedule
-- Data saved in a local SQLite database
+- GUI with tabs for Schedule, Employees, and Time Off
+- Add/edit/delete employee data
+- Define employee availability and shift limits
+- Submit and manage time-off requests
+- Auto-generate weekly schedules
+- Built-in calendar date selection
+
+## 📸 Screenshots
+
+### Generate Schedule View
+![Schedule View](screenshots/schedule_view.png)
+
+### Time Off Management
+![Time Off](screenshots/timeoff.png)
+
+### Employee Editor
+![Edit Employee](screenshots/edit_employee.png)
+
+### Blank Schedule Generation
+![Blank Schedule](screenshots/blank_schedule.png)
 
 ## 🛠 Tech Stack
 
 - Python 3.x
 - PyQt5
 - SQLite
-- OR-Tools for schedule optimization)
+- Qt Designer (optional, for UI design)
 
-## 🖼️ Screenshots
-
-![Main Window](screenshots/main_ui.png)  
-![Schedule View](screenshots/schedule.png)
-
-## 🚀 Getting Started
+## 🚀 Running the App
 
 ### Prerequisites
-- Python 3.9+
-- `pip install pyqt5`
+```bash
+pip install pyqt5
+```
 
 ### Run the App
-
 ```bash
-git clone https://github.com/vaz17/scheduler
-cd scheduler
 python main.py
 ```
 
-Make sure you allow GUI windows if running on Linux.
+The application will launch with a dark-themed GUI. All data is stored locally in `employees.db`.
 
-## 💡 Design Highlights
+## 📚 Learning Outcomes
 
-- Built with PyQt5 using custom QWidgets
-- Modular structure: UI logic, database handling, and schedule generator
-- GUI runs as a standalone executable on Windows or Mac (optional pyinstaller build)
-
-## 📚 Learning Goals
-
-- Deepen GUI app development with PyQt5
-- Integrate GUI with SQLite backend
-- Build CRUD workflows in a visual desktop app
+- Built a full-stack local app using Python and PyQt5
+- Designed modular GUI with multiple views and interaction states
+- Used SQLite for persistent employee and time-off storage
+- Improved UX through calendar widgets and constraint-based scheduling
 
 ## 📄 License
 
-MIT — free to use and extend.
+MIT — feel free to adapt and extend.
